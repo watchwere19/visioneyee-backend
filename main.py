@@ -2,17 +2,15 @@ from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pytesseract
+import os
 from PIL import Image
 import io
 import piexif
 import requests
 import base64
-import os
 from typing import Optional
-import pytesseract
-import os
 
-# Force Tesseract path on Render
+# 👇 Force Tesseract path
 pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 app = FastAPI()
 
