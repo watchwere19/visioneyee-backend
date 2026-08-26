@@ -4,6 +4,6 @@ services:
     runtime: python
     buildCommand: |
       apt-get update
-      apt-get install -y tesseract-ocr tesseract-ocr-eng libjpeg-dev zlib1g-dev
+      apt-get install -y tesseract-ocr tesseract-ocr-eng
       pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
