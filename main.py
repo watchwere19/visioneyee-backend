@@ -1,17 +1,16 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import easyocr
-import piexif
-from PIL import Image
+import pytesseract
+from PIL import Image, ImageFilter
 import io
-import base64
+import piexif
 import requests
 import os
 
 app = FastAPI()
 
-# Allow your Hugging Face Space to call this API
+# CORS for HF frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,10 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load EasyOCR (runs perfectly on Render's free 512MB RAM)
-reader = easyocr.Reader(['en'], gpu=False)
-
-# Optional: Get free key from open.bigmodel.cn for AI reasoning (skip if you want)
+# Optional: GLM API key for AI reasoning (free from open.bigmodel.cn)
 GLM_API_KEY = os.getenv("GLM_API_KEY", "")
 
 @app.post("/analyze")
@@ -30,8 +26,8 @@ async def analyze_image(file: UploadFile = File(...)):
     try:
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
-        
-        # 1. EXIF Metadata
+
+        # ----- 1. EXIF Metadata -----
         exif_data = {}
         try:
             exif_dict = piexif.load(contents)
@@ -42,21 +38,35 @@ async def analyze_image(file: UploadFile = File(...)):
         except:
             pass
 
-        # 2. OCR – Text + Bounding Boxes
-        result = reader.readtext(contents)
-        ocr_results = []
-        for (bbox, text, confidence) in result:
-            coord_str = f"[{bbox[0][0]:.0f},{bbox[0][1]:.0f}] → [{bbox[1][0]:.0f},{bbox[1][1]:.0f}] → [{bbox[2][0]:.0f},{bbox[2][1]:.0f}] → [{bbox[3][0]:.0f},{bbox[3][1]:.0f}]"
-            ocr_results.append({
-                "text": text,
-                "confidence": round(confidence, 2),
-                "coordinates": coord_str
-            })
+        # ----- 2. OCR with Tesseract (lightweight) -----
+        # Preprocess image for better OCR
+        gray = image.convert('L')
+        # Use pytesseract to get data with bounding boxes
+        ocr_data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
 
-        # 3. AI Reasoning (if API key is set)
+        ocr_results = []
+        n_boxes = len(ocr_data['text'])
+        for i in range(n_boxes):
+            if int(ocr_data['conf'][i]) > 30:  # confidence threshold
+                text = ocr_data['text'][i].strip()
+                if text:
+                    x = ocr_data['left'][i]
+                    y = ocr_data['top'][i]
+                    w = ocr_data['width'][i]
+                    h = ocr_data['height'][i]
+                    # Convert to 4-point coordinates (x1,y1 → x2,y2 → x3,y3 → x4,y4)
+                    coord_str = f"[{x},{y}] → [{x+w},{y}] → [{x+w},{y+h}] → [{x},{y+h}]"
+                    ocr_results.append({
+                        "text": text,
+                        "confidence": round(ocr_data['conf'][i] / 100, 2),
+                        "coordinates": coord_str
+                    })
+
+        # ----- 3. AI Reasoning (optional, uses GLM API) -----
         reasoning = "AI reasoning not configured. OCR and EXIF extracted successfully."
         if GLM_API_KEY:
             try:
+                import base64
                 buffered = io.BytesIO()
                 image.save(buffered, format="JPEG")
                 img_base64 = base64.b64encode(buffered.getvalue()).decode()
@@ -77,7 +87,7 @@ async def analyze_image(file: UploadFile = File(...)):
             except Exception as e:
                 reasoning = f"AI API error: {str(e)}"
 
-        # 4. Return JSON response
+        # ----- 4. Response -----
         return {
             "success": True,
             "reasoning": reasoning,
