@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pytesseract
@@ -6,13 +6,13 @@ from PIL import Image
 import io
 import piexif
 import requests
-import os
 import base64
+import os
 from typing import Optional
 
 app = FastAPI()
 
-# Enable CORS for Hugging Face
+# Enable CORS (so your HF frontend can call this)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Groq API endpoint (free)
+# Groq API endpoint (free vision model)
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 @app.post("/analyze")
@@ -63,11 +63,11 @@ async def analyze_image(
                         "coordinates": coord_str
                     })
 
-        # ----- 3. AI Reasoning via Groq (if API key provided) -----
+        # ----- 3. AI Reasoning (only if API key provided) -----
         reasoning = "AI reasoning not available (no API key provided)."
-        if groq_api_key:
+        if groq_api_key and groq_api_key.strip():
             try:
-                # Convert image to base64 for Groq's vision model
+                # Convert image to base64
                 buffered = io.BytesIO()
                 image.save(buffered, format="JPEG")
                 img_base64 = base64.b64encode(buffered.getvalue()).decode()
@@ -94,11 +94,11 @@ async def analyze_image(
                 if resp.status_code == 200:
                     reasoning = resp.json()['choices'][0]['message']['content']
                 else:
-                    reasoning = f"Groq API error: {resp.status_code} - {resp.text}"
+                    reasoning = f"Groq API error: {resp.status_code}"
             except Exception as e:
                 reasoning = f"AI reasoning failed: {str(e)}"
 
-        # ----- 4. Reverse Search (mock for now) -----
+        # ----- 4. Reverse Search (mock) -----
         reverse_results = [
             {"site": "Google Lens", "url": "https://lens.google.com/"},
             {"site": "TinEye", "url": "https://tineye.com/"}
@@ -112,6 +112,11 @@ async def analyze_image(
                 "Lens": exif_data.get("LensModel", "N/A"),
                 "Date": exif_data.get("DateTime", "N/A"),
                 "GPS": exif_data.get("GPSLatitude", "N/A"),
+                "Altitude": exif_data.get("GPSAltitude", "N/A"),
+                "ISO": exif_data.get("ISOSpeedRatings", "N/A"),
+                "FocalLength": exif_data.get("FocalLength", "N/A"),
+                "Aperture": exif_data.get("FNumber", "N/A"),
+                "ShutterSpeed": exif_data.get("ExposureTime", "N/A"),
                 "Dimensions": f"{image.width} x {image.height}",
                 "Size": f"{len(contents) / 1024:.1f} KB"
             },
