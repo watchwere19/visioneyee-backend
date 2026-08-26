@@ -9,7 +9,11 @@ import requests
 import base64
 import os
 from typing import Optional
+import pytesseract
+import os
 
+# Force Tesseract path on Render
+pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 app = FastAPI()
 
 # Enable CORS (so your HF frontend can call this)
