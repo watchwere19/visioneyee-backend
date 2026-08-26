@@ -10,8 +10,9 @@ import requests
 import base64
 from typing import Optional
 
-# 👇 Force Tesseract path
+# Force Tesseract path for Render Docker container
 pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+
 app = FastAPI()
 
 # Enable CORS (so your HF frontend can call this)
@@ -22,7 +23,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Groq API endpoint (free vision model)
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 @app.post("/analyze")
@@ -69,7 +69,6 @@ async def analyze_image(
         reasoning = "AI reasoning not available (no API key provided)."
         if groq_api_key and groq_api_key.strip():
             try:
-                # Convert image to base64
                 buffered = io.BytesIO()
                 image.save(buffered, format="JPEG")
                 img_base64 = base64.b64encode(buffered.getvalue()).decode()
@@ -79,7 +78,7 @@ async def analyze_image(
                     "Content-Type": "application/json"
                 }
                 payload = {
-                    "model": "llama-3.2-90b-vision-preview",  # Groq's free vision model
+                    "model": "llama-3.2-90b-vision-preview",
                     "messages": [
                         {
                             "role": "user",
