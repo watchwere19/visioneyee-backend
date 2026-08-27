@@ -1,17 +1,15 @@
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import pytesseract
-import os
+import easyocr
 from PIL import Image
 import io
 import piexif
 import requests
 import base64
+import os
 from typing import Optional
-
-# Force Tesseract path for Render Docker container
-pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+import numpy as np
 
 app = FastAPI()
 
@@ -23,6 +21,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize EasyOCR once at startup (runs on CPU)
+reader = easyocr.Reader(['en'], gpu=False)
+
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 @app.post("/analyze")
@@ -33,6 +34,9 @@ async def analyze_image(
     try:
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
+        
+        # Convert PIL image to numpy array for EasyOCR
+        img_np = np.array(image)
 
         # ----- 1. EXIF Metadata -----
         exif_data = {}
@@ -45,25 +49,17 @@ async def analyze_image(
         except:
             pass
 
-        # ----- 2. OCR with Tesseract -----
-        gray = image.convert('L')
-        ocr_data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
-
+        # ----- 2. OCR with EasyOCR (no system dependencies needed) -----
+        result = reader.readtext(img_np)
         ocr_results = []
-        for i in range(len(ocr_data['text'])):
-            if int(ocr_data['conf'][i]) > 30:
-                text = ocr_data['text'][i].strip()
-                if text:
-                    x = ocr_data['left'][i]
-                    y = ocr_data['top'][i]
-                    w = ocr_data['width'][i]
-                    h = ocr_data['height'][i]
-                    coord_str = f"[{x},{y}] → [{x+w},{y}] → [{x+w},{y+h}] → [{x},{y+h}]"
-                    ocr_results.append({
-                        "text": text,
-                        "confidence": round(ocr_data['conf'][i] / 100, 2),
-                        "coordinates": coord_str
-                    })
+        for (bbox, text, confidence) in result:
+            # bbox is [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+            coord_str = f"[{bbox[0][0]:.0f},{bbox[0][1]:.0f}] → [{bbox[1][0]:.0f},{bbox[1][1]:.0f}] → [{bbox[2][0]:.0f},{bbox[2][1]:.0f}] → [{bbox[3][0]:.0f},{bbox[3][1]:.0f}]"
+            ocr_results.append({
+                "text": text,
+                "confidence": round(confidence, 2),
+                "coordinates": coord_str
+            })
 
         # ----- 3. AI Reasoning (only if API key provided) -----
         reasoning = "AI reasoning not available (no API key provided)."
